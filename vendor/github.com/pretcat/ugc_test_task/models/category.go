@@ -2,14 +2,15 @@ package models
 
 import (
 	"fmt"
+
 	"github.com/google/uuid"
 	"github.com/pretcat/ugc_test_task/common"
 )
 
 type Category struct {
-	Id       string
-	Name     string
-	CreateAt int64
+	Id       string `json:"id"`
+	Name     string `json:"name"`
+	CreateAt int64  `json:"create_at"`
 }
 
 func NewCategory() Category {

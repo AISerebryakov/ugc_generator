@@ -3,7 +3,6 @@ package buildings
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/pretcat/ugc_test_task/errors"
 	"github.com/pretcat/ugc_test_task/models"
@@ -18,20 +17,21 @@ const (
 
 var (
 	buildingsFields = []string{models.IdKey, models.CreateAt, models.AddressKey, models.LocationKey}
-	indexFields     = []string{models.CreateAt, models.AddressKey}
+	indexes         = []pg.Index{
+		{TableName: TableName, Field: models.AddressKey, Type: pg.HashIndex},
+		{TableName: TableName, Field: models.CreateAt, Type: pg.BtreeIndex},
+	}
 )
 
 type Repository struct {
 	client pg.Client
 }
 
-func New(conf Config) (r Repository, err error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	r.client, err = pg.Connect(ctx, conf.pgConfig)
-	if err != nil {
-		return Repository{}, err
+func New(client pg.Client) (r Repository, err error) {
+	if client.IsEmpty() {
+		return Repository{}, fmt.Errorf("pg client is empty")
 	}
+	r.client = client
 	if err := r.createTable(); err != nil {
 		return Repository{}, fmt.Errorf("create '%s' table: %v", TableName, err)
 	}
@@ -41,13 +41,11 @@ func New(conf Config) (r Repository, err error) {
 	return r, nil
 }
 
-//todo: create db
-
 func (r Repository) createTable() error {
 	s := sql.CreateTable(TableName).IfNotExists().
-		Define(models.IdKey, "uuid", "primary key", "not null").
-		Define(models.CreateAt, "bigint", fmt.Sprintf("check (%s > 0)", models.CreateAt)).
-		Define(models.AddressKey, "varchar(200)", "not null").
+		Define(models.IdKey, "uuid", "primary key").
+		Define(models.CreateAt, "bigint", fmt.Sprintf("check(%s > 0)", models.CreateAt), "not null").
+		Define(models.AddressKey, "varchar(200)", fmt.Sprintf("check (%s != '')", models.AddressKey), "not null").
 		Define(models.LocationKey, "jsonb", "not null").String()
 	_, err := r.client.Exec(context.Background(), s)
 	if err != nil {
@@ -57,15 +55,10 @@ func (r Repository) createTable() error {
 }
 
 func (r Repository) createIndexes() error {
-	for _, indexField := range indexFields {
-		indexType := "btree"
-		if indexField == models.AddressKey {
-			indexType = "hash"
-		}
-		sqlStr := fmt.Sprintf("create index if not exists %s_idx on %s using %s (%s)", indexField, TableName, indexType, indexField)
-		_, err := r.client.Exec(context.Background(), sqlStr)
+	for _, idx := range indexes {
+		_, err := r.client.Exec(context.Background(), idx.BuildSql())
 		if err != nil {
-			return fmt.Errorf("create index for field '%s': %v", indexField, err)
+			return fmt.Errorf("create '%s' index for field '%s': %v", idx.Type, idx.Field, err)
 		}
 	}
 	return nil
@@ -88,6 +81,9 @@ func (r Repository) IsEmpty() bool {
 }
 
 func (r Repository) Stop(ctx context.Context) (err error) {
+	if r.client.IsEmpty() {
+		return nil
+	}
 	ch := make(chan bool)
 	defer close(ch)
 	go func() {

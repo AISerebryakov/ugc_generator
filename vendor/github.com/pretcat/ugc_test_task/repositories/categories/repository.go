@@ -3,10 +3,10 @@ package categories
 import (
 	"context"
 	"fmt"
+
 	"github.com/pretcat/ugc_test_task/errors"
 	"github.com/pretcat/ugc_test_task/models"
 	"github.com/pretcat/ugc_test_task/pg"
-	"time"
 
 	sql "github.com/huandu/go-sqlbuilder"
 )
@@ -16,24 +16,24 @@ const (
 )
 
 var (
+	nameGinIndexParam = fmt.Sprintf("string_to_array(lower(%s), '.')", models.NameKey)
+
 	categoryFields = []string{models.IdKey, models.NameKey, models.CreateAt}
-	indexFields    = []string{models.NameKey, models.CreateAt}
+	indexes        = []pg.Index{
+		{TableName: TableName, Field: models.NameKey, Type: pg.GinIndex, Parameter: nameGinIndexParam},
+		{TableName: TableName, Field: models.CreateAt, Type: pg.BtreeIndex},
+	}
 )
 
 type Repository struct {
 	client pg.Client
 }
 
-func New(conf Config) (r Repository, err error) {
-	if err := conf.Validate(); err != nil {
-		return r, fmt.Errorf("config is invalid: %v", err)
+func New(client pg.Client) (r Repository, err error) {
+	if client.IsEmpty() {
+		return Repository{}, fmt.Errorf("pg client is empty")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	r.client, err = pg.Connect(ctx, conf.pgConfig)
-	if err != nil {
-		return Repository{}, err
-	}
+	r.client = client
 	if err := r.createTable(); err != nil {
 		return Repository{}, fmt.Errorf("create '%s' table: %v", TableName, err)
 	}
@@ -45,9 +45,9 @@ func New(conf Config) (r Repository, err error) {
 
 func (r Repository) createTable() error {
 	s := sql.CreateTable(TableName).IfNotExists().
-		Define(models.IdKey, "uuid", "primary key", "not null").
-		Define(models.NameKey, "ltree", fmt.Sprintf("check (%s != '')", models.NameKey)).
-		Define(models.CreateAt, "bigint", fmt.Sprintf("check (%s > 0)", models.CreateAt)).String()
+		Define(models.IdKey, "uuid", "primary key").
+		Define(models.NameKey, "varchar(300)", fmt.Sprintf("check(%s != '')", models.NameKey), "unique", "not null").
+		Define(models.CreateAt, "bigint", fmt.Sprintf("check(%s > 0)", models.CreateAt), "not null").String()
 	_, err := r.client.Exec(context.Background(), s)
 	if err != nil {
 		return err
@@ -56,15 +56,10 @@ func (r Repository) createTable() error {
 }
 
 func (r Repository) createIndexes() error {
-	for _, indexField := range indexFields {
-		indexType := "btree"
-		if indexField == models.NameKey {
-			indexType = "gist"
-		}
-		sqlStr := fmt.Sprintf("create index if not exists %s_idx on %s using %s (%s)", indexField, TableName, indexType, indexField)
-		_, err := r.client.Exec(context.Background(), sqlStr)
+	for _, idx := range indexes {
+		_, err := r.client.Exec(context.Background(), idx.BuildSql())
 		if err != nil {
-			return fmt.Errorf("create index for field '%s': %v", indexField, err)
+			return fmt.Errorf("create '%s' index for field '%s': %v", idx.Type, idx.Field, err)
 		}
 	}
 	return nil
@@ -87,6 +82,9 @@ func (r Repository) IsEmpty() bool {
 }
 
 func (r Repository) Stop(ctx context.Context) (err error) {
+	if r.client.IsEmpty() {
+		return nil
+	}
 	ch := make(chan bool)
 	defer close(ch)
 	go func() {

@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+
 	"github.com/google/uuid"
 	"github.com/pretcat/ugc_test_task/common"
 )
@@ -55,6 +56,9 @@ func (comp Company) Validate() error {
 	}
 	if len(comp.PhoneNumbers) == 0 {
 		return fmt.Errorf("'%s' is empty", PhoneNumbersKey)
+	}
+	if len(comp.Categories) == 0 {
+		return fmt.Errorf("'%s' is empty", CategoriesKey)
 	}
 	return nil
 }

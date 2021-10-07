@@ -2,17 +2,18 @@ package generator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"strconv"
 
-	"github.com/pretcat/ugc_test_task/common/random"
 	"github.com/pretcat/ugc_test_task/models"
+	"github.com/pretcat/ugc_test_task/random"
 	buildrepos "github.com/pretcat/ugc_test_task/repositories/buildings"
 )
 
 func (gen *Generator) initBuildingRepository() (err error) {
-	gen.buildRepos, err = buildrepos.New(buildrepos.NewConfig(gen.conf.GetPgConfig()))
+	gen.buildingRepos, err = buildrepos.New(gen.pgClient)
 	if err != nil {
 		return err
 	}
@@ -20,17 +21,29 @@ func (gen *Generator) initBuildingRepository() (err error) {
 }
 
 func (gen Generator) GenerateBuildings(num int) error {
-	for i := 0; i <= num; i++ {
+	for i := 0; i < num; i++ {
 		building := models.NewBuilding()
 		building.CreateAt = building.CreateAt - rand.Int63n(1000)
-		building.Address = "Address_" + random.String(10) + "," + strconv.Itoa(i+1)
+		building.Address = "Address_" + random.Letters(10) + "," + strconv.Itoa(i+1)
 		building.Location = genLocation()
-		fmt.Printf("%d/%d\n", i+1, num)
-		if err := gen.buildRepos.Insert(context.Background(), building); err != nil {
+		fmt.Printf("Gen buildings: %d/%d\n", i+1, num)
+		if err := gen.buildingRepos.Insert(context.Background(), building); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (gen Generator) getRandomBuilding(count int) (models.Building, error) {
+	building, found, err := gen.buildingRepos.Select(context.Background()).
+		Offset(rand.Intn(count-2) + 1).One()
+	if !found {
+		return models.Building{}, errors.New("not found")
+	}
+	if err != nil {
+		return models.Building{}, err
+	}
+	return building, nil
 }
 
 func genLocation() (loc models.Location) {

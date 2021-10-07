@@ -10,7 +10,7 @@ func main() {
 	conf := generator.Config{
 		Host:     "localhost",
 		Port:     "5432",
-		DbName:   "usg_test_task",
+		DbName:   "ugc_test_task",
 		User:     "postgres",
 		Password: "7823",
 	}
@@ -19,11 +19,15 @@ func main() {
 		fmt.Println(err.Error())
 		return
 	}
-	//if err := gen.GenerateBuildings(6000); err != nil {
+	//if err := gen.GenerateBuildings(650000); err != nil {
 	//	fmt.Println(err.Error())
 	//	return
 	//}
-	if err := gen.GenerateCategories(4000); err != nil {
+	//if err := gen.GenerateCategories(40000); err != nil {
+	//	fmt.Println(err.Error())
+	//	return
+	//}
+	if err := gen.GenerateCompanies(200000); err != nil {
 		fmt.Println(err.Error())
 		return
 	}
